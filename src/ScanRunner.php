@@ -11,7 +11,9 @@ class ScanRunner
         protected BladeDriver $driver,
         protected Filesystem $filesystem,
         protected ViewIndexPathResolver $resolver,
+        protected array $excludedFolders = [],
     ) {
+        $this->excludedFolders = $excludedFolders;
     }
 
     /**
@@ -19,11 +21,31 @@ class ScanRunner
      * index file for each, mirroring the view's directory structure under
      * $indexBasePath/$sourceLocale/.
      *
+     * @param string[] $excludedFolders Relative folder prefixes to skip.
+     *
      * @return array{written: int, files: string[]}
      */
-    public function run(string $viewsRoot, string $indexBasePath, string $sourceLocale = 'en'): array
+    public function run(string $viewsRoot, string $indexBasePath, string $sourceLocale = 'en', array $excludedFolders = []): array
     {
         $relativePaths = $this->filesystem->files($viewsRoot, '*.blade.php');
+        $excludedFolders = array_values(array_filter(array_map(
+            static fn (string $folder) => trim(str_replace('\\', '/', $folder), '/'),
+            $excludedFolders
+        )));
+
+        if ($excludedFolders !== []) {
+            $relativePaths = array_values(array_filter($relativePaths, static function (string $relativePath) use ($excludedFolders): bool {
+                $normalizedPath = ltrim(str_replace('\\', '/', $relativePath), '/');
+
+                foreach ($excludedFolders as $excludedFolder) {
+                    if ($normalizedPath === $excludedFolder || str_starts_with($normalizedPath, $excludedFolder . '/')) {
+                        return false;
+                    }
+                }
+
+                return true;
+            }));
+        }
 
         $written = 0;
 
