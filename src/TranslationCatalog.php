@@ -86,19 +86,52 @@ class TranslationCatalog
 
         // DOMDocument::loadHTML() assumes ISO-8859-1 unless the encoding
         // is unambiguous, which corrupts multibyte UTF-8 (accented
-        // characters, non-Latin scripts, etc). Converting to HTML
-        // entities first sidesteps that entirely, and avoids needing an
-        // injected xml-declaration prefix, which saveHTML() would otherwise
-        // re-emit as literal, visible text in the output.
+        // characters, non-Latin scripts, etc). Prepending an XML encoding
+        // declaration is the standard way to hint the real encoding to
+        // libxml during parsing. It becomes a processing-instruction node
+        // at the start of the document, which we explicitly remove below
+        // before serializing - otherwise saveHTML() re-emits it as
+        // literal, visible text in the output.
         $doc->loadHTML(
-            mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'),
+            '<?xml encoding="utf-8" ?>' . $html,
             LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
         );
         libxml_clear_errors();
 
+        foreach (iterator_to_array($doc->childNodes) as $child) {
+            if ($child->nodeType === XML_PI_NODE) {
+                $doc->removeChild($child);
+            }
+        }
+
         $this->walk($doc, $dictionary);
 
-        return $doc->saveHTML();
+        // DOMDocument::saveHTML() entity-encodes non-ASCII characters
+        // (e.g. "é" becomes "&eacute;") as part of its normal HTML
+        // serialization - this is valid HTML and renders correctly in
+        // browsers, but decoding it back to raw UTF-8 gives cleaner,
+        // more readable output. We protect the handful of entities that
+        // are structurally required for valid HTML (&amp; &lt; &gt;
+        // &quot; &#039;) so decoding never un-escapes something that
+        // needs to stay escaped.
+        return $this->decodeNonStructuralEntities($doc->saveHTML());
+    }
+
+    protected function decodeNonStructuralEntities(string $html): string
+    {
+        $structural = [
+            '&amp;' => "\0ENT_AMP\0",
+            '&lt;' => "\0ENT_LT\0",
+            '&gt;' => "\0ENT_GT\0",
+            '&quot;' => "\0ENT_QUOT\0",
+            '&#039;' => "\0ENT_APOS\0",
+            '&#39;' => "\0ENT_APOS\0",
+        ];
+
+        $protected = strtr($html, $structural);
+        $decoded = html_entity_decode($protected, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        return strtr($decoded, array_flip($structural));
     }
 
     protected function walk(DOMNode $node, array $dictionary): void
