@@ -4,6 +4,7 @@ namespace Volcy\Translator;
 
 use Volcy\Translator\Drivers\GoogleTranslationDriver;
 use Volcy\Translator\Drivers\GroqTranslationDriver;
+use Volcy\Translator\Drivers\CerebrasTranslationDriver;
 
 class TranslationDriverResolver
 {
@@ -20,6 +21,7 @@ class TranslationDriverResolver
 
         return match ($name) {
             'google' => new GoogleTranslationDriver($this->config['drivers']['google'] ?? []),
+            'cerebras' => new CerebrasTranslationDriver($this->config['drivers']['cerebras'] ?? []),
             default => new GroqTranslationDriver($this->config['drivers']['groq'] ?? []),
         };
     }
