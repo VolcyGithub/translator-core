@@ -7,16 +7,25 @@
         "translation",
         "i18n",
         "blade",
-        "localization"
+        "localization",
+        "laravel",
+        "flightphp",
+        "multilingual"
     ],
     "authors": [
         {
             "name": "Yowensly Volcy",
+            "email": "svolcy12@gmail.com",
             "role": "Developer"
         }
     ],
-    "minimum-stability": "dev",
-    "prefer-stable": true,
+    "homepage": "https://github.com/VolcyGithub/translator-core",
+    "support": {
+        "issues": "https://github.com/VolcyGithub/translator-core/issues",
+        "source": "https://github.com/VolcyGithub/translator-core",
+        "docs": "https://github.com/VolcyGithub/translator-core/blob/main/README.md",
+        "security": "https://github.com/VolcyGithub/translator-core/blob/main/SECURITY.md"
+    },
     "require": {
         "php": "^8.0",
         "ext-dom": "*",
@@ -38,6 +47,9 @@
         }
     },
     "config": {
-        "sort-packages": true
-    }
+        "sort-packages": true,
+        "optimize-autoloader": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
 }

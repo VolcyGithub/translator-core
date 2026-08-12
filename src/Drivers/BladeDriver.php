@@ -6,9 +6,14 @@ use DOMDocument;
 use DOMElement;
 use DOMNode;
 use Volcy\Translator\Contracts\DocumentDriver;
+use Volcy\Translator\Contracts\IdStrategy;
 
 class BladeDriver implements DocumentDriver
 {
+    public function __construct(protected IdStrategy $idStrategy)
+    {
+    }
+
     public function name(): string
     {
         return 'blade';
@@ -79,8 +84,7 @@ class BladeDriver implements DocumentDriver
                     continue;
                 }
 
-                $items[] = [
-                    'id' => sha1($path . '|php|' . $text . '|' . $offset),
+                $item = [
                     'type' => 'php',
                     'text' => $text,
                     'path' => $path,
@@ -89,6 +93,9 @@ class BladeDriver implements DocumentDriver
                     'line' => $this->positionFromOffset($offset, $content)['line'],
                     'column' => $this->positionFromOffset($offset, $content)['column'],
                 ];
+                
+                $item['id'] = $this->idStrategy->generateId($item);
+                $items[] = $item;
             }
         }
 
@@ -115,8 +122,7 @@ class BladeDriver implements DocumentDriver
                     continue;
                 }
 
-                $items[] = [
-                    'id' => sha1($path . '|attribute|' . $attribute . '|' . $value),
+                $item = [
                     'type' => 'attribute',
                     'text' => $value,
                     'path' => $path,
@@ -125,6 +131,15 @@ class BladeDriver implements DocumentDriver
                     'line' => null,
                     'column' => null,
                 ];
+                
+                // Check for explicit ID attribute (data-i18n-attribute)
+                $explicitId = $this->explicitIdAttribute($node, "data-i18n-{$attribute}");
+                if ($explicitId !== null) {
+                    $item['translation_id'] = $explicitId;
+                }
+                
+                $item['id'] = $this->idStrategy->generateId($item);
+                $items[] = $item;
             }
         }
 
@@ -132,8 +147,7 @@ class BladeDriver implements DocumentDriver
             $text = trim(preg_replace('/\s+/u', ' ', $node->nodeValue ?? '') ?? '');
 
             if ($text !== '' && preg_match('/[\pL\pN]/u', $text) === 1) {
-                $items[] = [
-                    'id' => sha1($path . '|text|' . $text),
+                $item = [
                     'type' => 'text',
                     'text' => $text,
                     'path' => $path,
@@ -142,6 +156,17 @@ class BladeDriver implements DocumentDriver
                     'line' => null,
                     'column' => null,
                 ];
+                
+                // Check for explicit ID attribute on parent element (data-i18n)
+                $explicitId = $node->parentNode instanceof DOMElement
+                    ? $this->explicitIdAttribute($node->parentNode, 'data-i18n')
+                    : null;
+                if ($explicitId !== null) {
+                    $item['translation_id'] = $explicitId;
+                }
+                
+                $item['id'] = $this->idStrategy->generateId($item);
+                $items[] = $item;
             }
         }
 
@@ -159,6 +184,17 @@ class BladeDriver implements DocumentDriver
         }
 
         return $unique;
+    }
+
+    protected function explicitIdAttribute(DOMElement $node, string $attribute): ?string
+    {
+        if (! $node->hasAttribute($attribute)) {
+            return null;
+        }
+
+        $value = trim($node->getAttribute($attribute));
+
+        return $value === '' ? null : $value;
     }
 
     protected function positionFromOffset(int $offset, string $content): array
@@ -254,8 +290,7 @@ class BladeDriver implements DocumentDriver
 
             $position = $this->positionFromOffset($offset, $fullContent);
 
-            $items[] = [
-                'id' => sha1($path . '|php-array|' . $text . '|' . $offset),
+            $item = [
                 'type' => 'php_array',
                 'text' => $text,
                 'path' => $path,
@@ -264,6 +299,22 @@ class BladeDriver implements DocumentDriver
                 'line' => $position['line'],
                 'column' => $position['column'],
             ];
+
+            // If this string is the VALUE of an associative array entry
+            // ('some-key' => 'the text'), use that key as the explicit
+            // translation id. Only applies to associative arrays - plain
+            // indexed list items ('text one', 'text two') have nothing
+            // preceding them to key off, so they fall back to the
+            // strategy-based id.
+            $matchOffsetInBlock = $matches[0][$i][1];
+            $before = rtrim(substr($blockContent, max(0, $matchOffsetInBlock - 120), min($matchOffsetInBlock, 120)));
+
+            if (preg_match('/([\'"])([a-zA-Z0-9_.\-]+)\1\s*=>\s*$/', $before, $keyMatch)) {
+                $item['translation_id'] = $keyMatch[2];
+            }
+
+            $item['id'] = $this->idStrategy->generateId($item);
+            $items[] = $item;
         }
 
         return $items;

@@ -24,7 +24,7 @@ class TranslationCatalog
      * layout + template + partials/components all contribute strings).
      *
      * @param string[] $viewNames
-     * @return array<string, string> map of text_hash => translated text
+     * @return array<string, string> map of id => translated text
      */
     public function forViewsAndLocale(array $viewNames, string $locale): array
     {
@@ -62,8 +62,8 @@ class TranslationCatalog
         $map = [];
 
         foreach ($items as $item) {
-            if (isset($item['text_hash'], $item['text'])) {
-                $map[$item['text_hash']] = $item['text'];
+            if (isset($item['id'], $item['text'])) {
+                $map[$item['id']] = $item['text'];
             }
         }
 
@@ -71,7 +71,7 @@ class TranslationCatalog
     }
 
     /**
-     * Apply a text_hash => translated text dictionary to rendered HTML.
+     * Apply an id => translated text dictionary to rendered HTML.
      * Pure function: no I/O, no side effects. Framework bridges call
      * this from their middleware/hook after getting the dictionary above.
      */
@@ -147,22 +147,33 @@ class TranslationCatalog
                 }
 
                 $value = trim($node->getAttribute($attr));
-                $hash = sha1($value);
 
-                if (isset($dictionary[$hash])) {
-                    $node->setAttribute($attr, $dictionary[$hash]);
+                // Explicit id takes priority (data-i18n-title, data-i18n-alt,
+                // etc.) - falls back to hashing the rendered value, same as
+                // scan time, for anything left untagged.
+                $explicitId = $this->explicitIdAttribute($node, "data-i18n-{$attr}");
+                $key = $explicitId ?? sha1($value);
+
+                if (isset($dictionary[$key])) {
+                    $node->setAttribute($attr, $dictionary[$key]);
                 }
             }
         }
 
         if ($node->nodeType === XML_TEXT_NODE) {
             $trimmed = trim($node->nodeValue ?? '');
-            $hash = sha1($trimmed);
 
-            if ($trimmed !== '' && isset($dictionary[$hash])) {
+            // A text node's explicit id comes from data-i18n on its
+            // *parent element* (e.g. <p data-i18n="bio.founder-intro">).
+            $explicitId = $node->parentNode instanceof DOMElement
+                ? $this->explicitIdAttribute($node->parentNode, 'data-i18n')
+                : null;
+            $key = $explicitId ?? sha1($trimmed);
+
+            if ($trimmed !== '' && isset($dictionary[$key])) {
                 $node->nodeValue = preg_replace(
                     '/' . preg_quote($trimmed, '/') . '/',
-                    $dictionary[$hash],
+                    $dictionary[$key],
                     $node->nodeValue,
                     1
                 );
@@ -172,5 +183,16 @@ class TranslationCatalog
         foreach (iterator_to_array($node->childNodes ?? []) as $child) {
             $this->walk($child, $dictionary);
         }
+    }
+
+    protected function explicitIdAttribute(DOMElement $node, string $attribute): ?string
+    {
+        if (! $node->hasAttribute($attribute)) {
+            return null;
+        }
+
+        $value = trim($node->getAttribute($attribute));
+
+        return $value === '' ? null : $value;
     }
 }

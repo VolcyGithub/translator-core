@@ -15,9 +15,9 @@ class BuildRunner
 
     /**
      * Fill in a target-locale index from the source-locale index. Only
-     * translates strings whose text_hash isn't already present in the
-     * target file, so re-running this is cheap and idempotent. Never
-     * called during a web request - this is an offline/CLI operation.
+     * translates strings whose id isn't already present in the target
+     * file, so re-running this is cheap and idempotent. Never called
+     * during a web request - this is an offline/CLI operation.
      *
      * @return array{translated: int, reused: int}
      */
@@ -43,8 +43,8 @@ class BuildRunner
                 $decoded = json_decode($this->filesystem->get($targetPath), true) ?: [];
 
                 foreach ($decoded as $item) {
-                    if (isset($item['text_hash'])) {
-                        $existing[$item['text_hash']] = $item;
+                    if (isset($item['id'])) {
+                        $existing[$item['id']] = $item;
                     }
                 }
             }
@@ -52,8 +52,8 @@ class BuildRunner
             $result = [];
 
             foreach ($sourceItems as $item) {
-                if (isset($existing[$item['text_hash']])) {
-                    $result[] = $existing[$item['text_hash']];
+                if (isset($existing[$item['id']])) {
+                    $result[] = $existing[$item['id']];
                     $reused++;
                     continue;
                 }
@@ -63,7 +63,9 @@ class BuildRunner
                     : $driver->translate($item['text'], $locale, $sourceLocale);
 
                 $result[] = [
-                    'text_hash' => $item['text_hash'],
+                    'id' => $item['id'],
+                    'id_source' => $item['id_source'] ?? 'hash',
+                    'text_hash' => $item['text_hash'] ?? sha1(trim($item['text'])),
                     'text' => $translatedText,
                     'type' => $item['type'],
                     'tag_path' => $item['tag_path'],

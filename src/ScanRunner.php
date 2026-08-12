@@ -3,6 +3,7 @@
 namespace Volcy\Translator;
 
 use Volcy\Translator\Contracts\Filesystem;
+use Volcy\Translator\Contracts\IdStrategy;
 use Volcy\Translator\Drivers\BladeDriver;
 
 class ScanRunner
@@ -11,6 +12,7 @@ class ScanRunner
         protected BladeDriver $driver,
         protected Filesystem $filesystem,
         protected ViewIndexPathResolver $resolver,
+        protected IdStrategy $idStrategy,
         protected array $excludedFolders = [],
     ) {
         $this->excludedFolders = $excludedFolders;
@@ -23,7 +25,7 @@ class ScanRunner
      *
      * @param string[] $excludedFolders Relative folder prefixes to skip.
      *
-     * @return array{written: int, files: string[]}
+     * @return array{written: int, files: string[], warnings: string[]}
      */
     public function run(string $viewsRoot, string $indexBasePath, string $sourceLocale = 'en', array $excludedFolders = []): array
     {
@@ -48,6 +50,7 @@ class ScanRunner
         }
 
         $written = 0;
+        $warnings = [];
 
         foreach ($relativePaths as $relativePath) {
             $fullPath = rtrim($viewsRoot, '/\\') . DIRECTORY_SEPARATOR . $relativePath;
@@ -62,11 +65,31 @@ class ScanRunner
             $indexed = [];
 
             foreach ($result['items'] as $item) {
-                $hash = sha1(trim($item['text']));
+                $textHash = sha1(trim($item['text']));
+                $explicitId = $item['translation_id'] ?? null;
 
-                // Keyed by hash to dedupe within this single file's index
-                $indexed[$hash] = [
-                    'text_hash' => $hash,
+                $id = ($explicitId !== null && $explicitId !== '') ? $explicitId : $textHash;
+                $idSource = ($explicitId !== null && $explicitId !== '') ? 'explicit' : 'hash';
+
+                // Two different explicit ids sharing text is fine (two
+                // distinct entries). Two DIFFERENT texts sharing the same
+                // explicit id is a real collision - the later one would
+                // silently overwrite the earlier one, so flag it instead
+                // of losing data quietly. This happens when the same key
+                // name is reused across items, e.g. multiple array items
+                // that each have a 'description' => '...' entry.
+                if ($idSource === 'explicit' && isset($indexed[$id]) && $indexed[$id]['text'] !== $item['text']) {
+                    $warnings[] = sprintf(
+                        "%s: id '%s' is used by two different strings - only the last one was kept. Give each a unique explicit id.",
+                        $relativePath,
+                        $id
+                    );
+                }
+
+                $indexed[$id] = [
+                    'id' => $id,
+                    'id_source' => $idSource,
+                    'text_hash' => $textHash,
                     'text' => $item['text'],
                     'type' => $item['type'],
                     'tag_path' => $item['tag_path'],
@@ -85,6 +108,6 @@ class ScanRunner
             $written++;
         }
 
-        return ['written' => $written, 'files' => $relativePaths];
+        return ['written' => $written, 'files' => $relativePaths, 'warnings' => $warnings];
     }
 }
