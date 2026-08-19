@@ -7,12 +7,11 @@ use DOMElement;
 use DOMNode;
 use Volcy\Translator\Contracts\DocumentDriver;
 use Volcy\Translator\Contracts\IdStrategy;
+use Volcy\Translator\BalancedElementExtractor;
 
 class BladeDriver implements DocumentDriver
 {
-    public function __construct(protected IdStrategy $idStrategy)
-    {
-    }
+    public function __construct(protected IdStrategy $idStrategy) {}
 
     public function name(): string
     {
@@ -44,7 +43,7 @@ class BladeDriver implements DocumentDriver
         );
         libxml_clear_errors();
 
-        $this->walkDom($document, $path, [], $items);
+        $this->walkDom($document, $path, $content, [], $items);
 
         return [
             'driver' => $this->name(),
@@ -93,7 +92,7 @@ class BladeDriver implements DocumentDriver
                     'line' => $this->positionFromOffset($offset, $content)['line'],
                     'column' => $this->positionFromOffset($offset, $content)['column'],
                 ];
-                
+
                 $item['id'] = $this->idStrategy->generateId($item);
                 $items[] = $item;
             }
@@ -102,7 +101,7 @@ class BladeDriver implements DocumentDriver
         return $items;
     }
 
-    protected function walkDom(DOMNode $node, string $path, array $stack, array &$items): void
+    protected function walkDom(DOMNode $node, string $path, string $content, array $stack, array &$items): void
     {
         if ($node instanceof DOMElement) {
             if (in_array(strtolower($node->tagName), ['script', 'style'], true)) {
@@ -111,6 +110,10 @@ class BladeDriver implements DocumentDriver
 
             $stack[] = $node->tagName;
 
+            if ($node->hasAttribute('data-i18n') && $this->hasElementChildren($node)) {
+                $this->extractRichTextItem($path, $content, $node, $stack, $items);
+                return;
+            }
             foreach (['title', 'alt', 'placeholder', 'aria-label', 'aria-description', 'label'] as $attribute) {
                 if (! $node->hasAttribute($attribute)) {
                     continue;
@@ -131,13 +134,13 @@ class BladeDriver implements DocumentDriver
                     'line' => null,
                     'column' => null,
                 ];
-                
+
                 // Check for explicit ID attribute (data-i18n-attribute)
                 $explicitId = $this->explicitIdAttribute($node, "data-i18n-{$attribute}");
                 if ($explicitId !== null) {
                     $item['translation_id'] = $explicitId;
                 }
-                
+
                 $item['id'] = $this->idStrategy->generateId($item);
                 $items[] = $item;
             }
@@ -156,7 +159,7 @@ class BladeDriver implements DocumentDriver
                     'line' => null,
                     'column' => null,
                 ];
-                
+
                 // Check for explicit ID attribute on parent element (data-i18n)
                 $explicitId = $node->parentNode instanceof DOMElement
                     ? $this->explicitIdAttribute($node->parentNode, 'data-i18n')
@@ -164,14 +167,14 @@ class BladeDriver implements DocumentDriver
                 if ($explicitId !== null) {
                     $item['translation_id'] = $explicitId;
                 }
-                
+
                 $item['id'] = $this->idStrategy->generateId($item);
                 $items[] = $item;
             }
         }
 
         foreach ($node->childNodes as $childNode) {
-            $this->walkDom($childNode, $path, $stack, $items);
+            $this->walkDom($childNode, $path, $content, $stack, $items);
         }
     }
 
@@ -318,5 +321,39 @@ class BladeDriver implements DocumentDriver
         }
 
         return $items;
+    }
+    protected function hasElementChildren(DOMElement $node): bool
+    {
+        foreach ($node->childNodes as $child) {
+            if ($child instanceof DOMElement) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected function extractRichTextItem(string $path, string $content, DOMElement $node, array $stack, array &$items): void
+    {
+        $id = $this->explicitIdAttribute($node, 'data-i18n');
+        if ($id === null) {
+            return;
+        }
+
+        $extracted = BalancedElementExtractor::extractByAttribute($content, "data-i18n=\"{$id}\"")
+            ?? BalancedElementExtractor::extractByAttribute($content, "data-i18n='{$id}'");
+
+        if ($extracted === null) {
+            return;
+        }
+
+        $items[] = [
+            'type' => 'html',
+            'text' => trim($extracted['inner_html']),
+            'path' => $path,
+            'tag_path' => implode(' > ', $stack),
+            'attribute' => null,
+            'translation_id' => $id,
+            'id' => $id,
+        ];
     }
 }
