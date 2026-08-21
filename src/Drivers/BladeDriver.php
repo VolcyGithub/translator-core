@@ -114,6 +114,8 @@ class BladeDriver implements DocumentDriver
                 $this->extractRichTextItem($path, $content, $node, $stack, $items);
                 return;
             }
+            
+            // Handle standard attributes
             foreach (['title', 'alt', 'placeholder', 'aria-label', 'aria-description', 'label'] as $attribute) {
                 if (! $node->hasAttribute($attribute)) {
                     continue;
@@ -143,6 +145,41 @@ class BladeDriver implements DocumentDriver
 
                 $item['id'] = $this->idStrategy->generateId($item);
                 $items[] = $item;
+            }
+            
+            // Handle custom data-i18n-* attributes (e.g., data-i18n-loading, data-i18n-text)
+            foreach ($node->attributes as $attribute) {
+                $attrName = $attribute->name;
+                if (preg_match('/^data-i18n-([a-zA-Z0-9_-]+)$/', $attrName, $matches)) {
+                    $attrSuffix = $matches[1]; // e.g., 'loading', 'text'
+                    
+                    // Skip if this is a standard attribute mapping (data-i18n-title, etc.)
+                    if (in_array($attrSuffix, ['title', 'alt', 'placeholder', 'aria-label', 'aria-description', 'label'])) {
+                        continue;
+                    }
+                    
+                    $value = trim($attribute->value);
+                    
+                    if ($value === '') {
+                        continue;
+                    }
+                    
+                    $item = [
+                        'type' => 'attribute',
+                        'text' => $value,
+                        'path' => $path,
+                        'tag_path' => implode(' > ', $stack),
+                        'attribute' => "data-i18n-{$attrSuffix}",
+                        'line' => null,
+                        'column' => null,
+                    ];
+                    
+                    // For custom data-i18n-* attributes, the attribute name itself can serve as the explicit ID
+                    $item['translation_id'] = $value;
+                    
+                    $item['id'] = $this->idStrategy->generateId($item);
+                    $items[] = $item;
+                }
             }
         }
 

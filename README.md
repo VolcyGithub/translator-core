@@ -17,6 +17,8 @@ Framework-agnostic Blade string extraction and JSON-based translation catalog sy
 - **PHP Array Support**: Extracts strings from PHP arrays with optional key-based IDs
 - **Collision Detection**: Warns about ID conflicts during scanning
 - **Framework Bridges**: Laravel and FlightPHP integration packages available
+- **Custom Data Attributes**: Support for `data-i18n-*` attributes for dynamic content translation
+- **Balanced Element Extraction**: Accurate HTML parsing for nested tag structures
 
 ## Requirements
 
@@ -211,6 +213,20 @@ When using the explicit ID strategy, you can specify translation IDs directly in
 <input data-i18n-placeholder="form.email.placeholder" placeholder="Enter email">
 <button data-i18n="buttons.submit">Submit</button>
 ```
+
+## Custom Data Attributes for Dynamic Content
+
+The scanner now supports custom `data-i18n-*` attributes for translating dynamic JavaScript content:
+
+```html
+<!-- For Alpine.js or other JavaScript frameworks -->
+<button data-i18n-loading="Loading..." data-i18n-text="Submit"
+        x-text="loading ? $el.dataset.i18nLoading : $el.dataset.i18nText">
+    Submit
+</button>
+```
+
+The scanner will extract the values from custom `data-i18n-*` attributes and make them available for translation. This enables compile-time translation for dynamic content that's controlled by JavaScript frameworks.
 
 ## PHP Arrays with Key-Based IDs
 
